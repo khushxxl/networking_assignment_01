@@ -1,180 +1,81 @@
 import socket
 import random
-import threading
-import tkinter as tk
-from tkinter import scrolledtext, Toplevel
 
-# Fun fact database
-fun_facts = [
-    "Bananas are berries, but strawberries aren't.",
-    "A group of flamingos is called a 'flamboyance'.",
-    "Honey never spoils. Archaeologists have found pots of honey over 3,000 years old!"
-]
 
-class IRCBot:
-    def __init__(self, server, port, nickname, channel, log_widget):
-        self.server = server
-        self.port = port
-        self.nickname = nickname
-        self.channel = channel
-        self.log_widget = log_widget
-        self.sock = None
+def send_message_as_bot(sock, message): # this function is used to send messages to the channel as a bot
+    sock.send((message + "\r\n").encode())
 
-    def send_message(self, message):
-        """Send a message to the IRC server."""
-        if self.sock:
-            self.sock.send((message + "\r\n").encode())
+def bot_join_channel(sock, channel):   # bot can join a channel 
+    send_message_as_bot(sock, f"JOIN {channel}")
 
-    def join_channel(self):
-        """Join a channel."""
-        self.send_message(f"JOIN {self.channel}")
+def respond_to_messages(sock, channel, user, command): # responds to messages with ! mark
+    if command == "!hello":
+        print('Hello Recieved')
+        send_message_as_bot(sock, f"PRIVMSG {channel} :Hello, {user}!")
 
-    def respond_to_command(self, user, command):
-        """Respond to channel commands."""
-        if command == "!hello":
-            self.log(f"Hello command received from {user}")
-            self.send_message(f"PRIVMSG {self.channel} :Hello, {user}!")
-        elif command.startswith("!slap"):
-            words = command.split()
-            target = random.choice(["User1", "User2", "User3"])  # Placeholder for random users
-            if len(words) > 1:
-                target = words[1]
-            self.send_message(f"PRIVMSG {self.channel} :{user} slaps {target} with a trout!")
+def check_if_its_minircd(port):
+    if port == 6667:
+        print("You are now connected to minircd's server!")
+    else: 
+        print("You are connected to a personal server now!")
 
-    def respond_to_private_message(self, user):
-        """Respond to private messages with random fun facts."""
-        fun_fact = random.choice(fun_facts)
-        self.send_message(f"PRIVMSG {user} :{fun_fact}")
-        self.log(f"Sent fun fact to {user}: {fun_fact}")
 
-    def log(self, message):
-        """Log messages to the log_widget."""
-        self.log_widget.insert(tk.END, message + "\n")
-        self.log_widget.see(tk.END)  # Auto-scroll to the end of the log
+# this funciton makes sures that the input text exists, and is not blank, if blank, it promps again
+def get_input(prompt_text):
+    user_input = ""
+    while not user_input:
+        user_input = input(prompt_text).strip() 
+        if not user_input:
+            print("This field cannot be empty. Please enter a value.")
+    return user_input
 
-    def start(self):
-        """Start the IRC bot."""
-        try:
-            # Create a socket and connect to the IRC server
-            self.sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-            self.sock.connect((self.server, self.port))
 
-            # Send user and nickname info
-            self.send_message(f"NICK {self.nickname}")
-            self.send_message(f"USER {self.nickname} 0 * :SuperBot")
+def main():
 
-            # Join the channel
-            self.join_channel()
 
-            self.log(f"Connected to {self.channel} as {self.nickname}")
-
-            while True:
-                # Receive data from the server
-                data = self.sock.recv(1024).decode()
-
-                # Handle PING (keep-alive)
-                if data.startswith("PING"):
-                    self.send_message(f"PONG {data.split()[1]}")
-
-                # Parse message
-                elif "PRIVMSG" in data:
-                    parts = data.split(" :", 1)
-                    
-                    if len(parts) > 1:
-                        message = parts[1].strip()
-
-                        user_info = data.split("!")[0]
-                        user = user_info.split(":")[1].strip()
-
-                        self.log(f"Message from {user}: {message}")
-
-                        if message.startswith("!"):
-                            self.respond_to_command(user, message)
-        except Exception as e:
-            self.log(f"Error: {e}")
-
-class BotWindow:
-    """Represents a single bot window where the user can configure and launch a bot."""
+   # inputs & validations
+    server = get_input("Enter the IRC server address (IPv6): ")
+    port = get_input('Enter the port your server is running on:')
+    nickname = get_input("Enter your bot's nickname: ")
+    channel = get_input("Enter the channel to join: ")  
     
-    def __init__(self, root, server="", nickname="", channel=""):
-        """Create a new bot configuration window."""
-        self.window = Toplevel(root)
-        self.window.title("Bot Configuration")
+    #socket connection
+    sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    sock.connect((server, int(port)))
 
-        # Store the input fields for this bot
-        self.server_entry = tk.Entry(self.window, width=40)
-        self.server_entry.insert(0, server)
 
-        self.nickname_entry = tk.Entry(self.window, width=40)
-        self.nickname_entry.insert(0, nickname)
+    send_message_as_bot(sock, f"NICK {nickname}")
+    send_message_as_bot(sock, f"USER {nickname} 0 * :SuperBot")
 
-        self.channel_entry = tk.Entry(self.window, width=40)
-        self.channel_entry.insert(0, channel)
+    check_if_its_minircd(int(port))
 
-        # Log widget for this bot
-        self.log_widget = scrolledtext.ScrolledText(self.window, width=60, height=20)
+    # join channel once connected
+    bot_join_channel(sock, channel)
 
-        # Layout configuration
-        tk.Label(self.window, text="IRC Server (IPv6):").grid(row=0, column=0, padx=5, pady=5)
-        self.server_entry.grid(row=0, column=1, padx=5, pady=5)
+    while True:
+       
+        data = sock.recv(1024).decode() # receieving the raw log data here
+        print("Raw data received:", data)
 
-        tk.Label(self.window, text="Bot Nickname:").grid(row=1, column=0, padx=5, pady=5)
-        self.nickname_entry.grid(row=1, column=1, padx=5, pady=5)
+        # keeping the server connection alive
+        if data.startswith("PING"):
+            send_message_as_bot(sock, f"PONG {data.split()[1]}")
 
-        tk.Label(self.window, text="Channel:").grid(row=2, column=0, padx=5, pady=5)
-        self.channel_entry.grid(row=2, column=1, padx=5, pady=5)
+        # detecting the PRIVMSg keyword and trying to parse
+        elif "PRIVMSG" in data:
+            parts = data.split(" :", 1)  
+            
+            if len(parts) > 1:
+                message = parts[1].strip()
+                user_info = data.split("!")[0]
+                user = user_info.split(":")[1].strip()
 
-        log_label = tk.Label(self.window, text="Bot Log:")
-        log_label.grid(row=3, column=0, padx=5, pady=5)
-        self.log_widget.grid(row=4, column=0, columnspan=2, padx=5, pady=5)
 
-        # Button to connect the bot
-        connect_button = tk.Button(self.window, text="Connect", command=self.on_connect)
-        connect_button.grid(row=5, column=0, columnspan=2, pady=10)
+                print(f"Message from {user}: {message}")
 
-    def on_connect(self):
-        """Handle the bot connection for this window."""
-        server = self.server_entry.get()
-        nickname = self.nickname_entry.get()
-        channel = self.channel_entry.get()
-
-        if server and nickname and channel:
-            self.log_widget.insert(tk.END, f"Connecting bot for {channel} as {nickname}...\n")
-            port = 6667  # IRC port
-            new_bot = IRCBot(server, port, nickname, channel, self.log_widget)
-
-            # Start the bot in a new thread
-            bot_thread = threading.Thread(target=new_bot.start)
-            bot_thread.start()
-        else:
-            self.log_widget.insert(tk.END, "Please fill all the fields.\n")
-        self.log_widget.see(tk.END)
-
-class BotApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("IRC Bot Manager")
-
-        # List to keep track of all bot windows
-        self.bot_windows = []
-
-        self.setup_widgets()
-
-    def setup_widgets(self):
-        """Setup the main app GUI widgets."""
-        tk.Label(self.root, text="Manage IRC Bots").grid(row=0, column=0, padx=10, pady=10)
-
-        # Button to create a new bot window
-        new_bot_button = tk.Button(self.root, text="Create New Bot", command=self.create_new_bot_window)
-        new_bot_button.grid(row=1, column=0, padx=10, pady=10)
-
-    def create_new_bot_window(self):
-        """Create a new bot window."""
-        new_bot_window = BotWindow(self.root)
-        self.bot_windows.append(new_bot_window)  # Keep track of the new window
-
+                # ! mark detection 
+                if message.startswith("!"):
+                    respond_to_messages(sock, channel, user, message)
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = BotApp(root)
-    root.mainloop()
+    main()
